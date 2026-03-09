@@ -1,0 +1,14 @@
+# Ignore everything by default
+*
+
+# Re-include only source code needed to build the container
+!main.py
+!Dockerfile
+!requirements.txt
+!modules/
+!modules/__init__.py
+!modules/preprocessor.py
+!modules/scenario_detector.py
+!modules/windower.py
+!modules/visualizer.py
+!modules/output_writer.py

@@ -1,0 +1,41 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# =========================
+# Project output
+# =========================
+output/
+
+# =========================
+# Large datasets
+# =========================
+i-80-vehicle-trajectory-data/
+i-80-vehicle-trajectory-data.zip
+*.csv
+*.txt
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Logs
+# =========================
+*.log
