@@ -1,0 +1,14 @@
+GCP — Rebuild, Redeploy, Execute:
+cmdgcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/ngsim-pipeline:v1 .
+cmdgcloud run jobs update ngsim-pipeline --image=us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/ngsim-pipeline:v1 --region=us-central1 --set-env-vars=INPUT_GCS_PATH=gs://ngsim-raw-data-ngsim-scenarios-proj/i80/trajectories-0400-0415.csv,USE_GCS=true,GCS_BUCKET_NAME=ngsim-raw-data-ngsim-scenarios-proj,GCS_PREFIX=output,VISUALIZE=true
+cmdgcloud run jobs execute ngsim-pipeline --region=us-central1
+
+Local — Run pipeline, find parquet, validate:
+cmdpython main.py --input trajectories-0400-0415.csv --output output/ --visualize
+cmddir output\*.parquet
+cmdpython validate.py --data trajectories-0400-0415.csv --samples output\scenario_windows_REPLACE_WITH_TIMESTAMP.parquet --output output
+
+GCP — Check outputs after a cloud run:
+cmdgsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/output/
+cmdgsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/output/plots/
+cmdgsutil cp -r gs://ngsim-raw-data-ngsim-scenarios-proj/output/plots/ output\plots\

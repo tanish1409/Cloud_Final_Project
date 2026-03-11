@@ -21,7 +21,7 @@ output/
 i-80-vehicle-trajectory-data/
 i-80-vehicle-trajectory-data.zip
 *.csv
-*.txt
+
 
 # =========================
 # OS files
