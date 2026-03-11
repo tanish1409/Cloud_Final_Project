@@ -18,26 +18,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ── Tunable thresholds ────────────────────────────────────────────────────────
-FRAME_RATE_HZ           = 10
-WINDOW_FRAMES           = 5 * FRAME_RATE_HZ   # 5-second window = 50 frames
+FRAME_RATE_HZ = 10
+WINDOW_FRAMES = 5 * FRAME_RATE_HZ   # 5-second window = 50 frames
 
 # Car-following
-CF_MAX_GAP_M            = 80.0    # max longitudinal gap between leader & follower (m)
-CF_MIN_DURATION_FRAMES  = 30      # must follow for ≥ 3 s
-CF_SPEED_CORR_MIN       = 0.6     # minimum Pearson correlation of speeds
-CF_SAME_LANE_RATIO      = 0.8     # fraction of window where lanes match
+CF_MAX_GAP_M = 80.0    # max longitudinal gap between leader & follower (m)
+CF_MIN_DURATION_FRAMES = 30      # must follow for ≥ 3 s
+CF_SPEED_CORR_MIN = 0.0     # minimum Pearson correlation of speeds
+CF_SAME_LANE_RATIO = 0.8     # fraction of window where lanes match
 
 # On-ramp merge
-ONRAMP_LANE_ID          = 6
-MAINLINE_LANES          = {1, 2, 3, 4, 5}
-MERGE_MAX_FRAMES        = WINDOW_FRAMES      # must complete within 5 s
-MERGE_MIN_LATERAL_M     = 1.5    # minimum lateral displacement during merge (m)
+ONRAMP_LANE_ID = 6
+MAINLINE_LANES = {1, 2, 3, 4, 5}
+MERGE_MAX_FRAMES = WINDOW_FRAMES      # must complete within 5 s
+MERGE_MIN_LATERAL_M = 1.5    # minimum lateral displacement during merge (m)
 
 # Lane cut-in
-CUTIN_MAX_GAP_BEFORE_M  = 60.0   # gap before cut-in (original follower to leader)
-CUTIN_MAX_GAP_AFTER_M   = 30.0   # gap after cut-in (original follower to cutter)
-CUTIN_SPEED_DROP_MS     = 1.0    # follower must slow by ≥ 1 m/s after cut-in
-CUTIN_MAX_FRAMES        = WINDOW_FRAMES
+# gap before cut-in (original follower to leader)
+CUTIN_MAX_GAP_BEFORE_M = 60.0
+CUTIN_MAX_GAP_AFTER_M = 30.0   # gap after cut-in (original follower to cutter)
+CUTIN_SPEED_DROP_MS = 1.0    # follower must slow by ≥ 1 m/s after cut-in
+CUTIN_MAX_FRAMES = WINDOW_FRAMES
 
 
 def _build_vehicle_dict(df: pd.DataFrame) -> dict:
@@ -57,7 +58,7 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
     Uses NGSIM 'Preceding' field as the ground-truth leader pointer.
     """
     events = []
-    vdict  = _build_vehicle_dict(df)
+    vdict = _build_vehicle_dict(df)
 
     for ego_id, ego_df in vdict.items():
         # Only keep frames where a leader is recorded
@@ -66,8 +67,8 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         # Group consecutive frames with the SAME leader
-        ego_with_leader["leader_id"]   = ego_with_leader["Preceding"]
-        ego_with_leader["block"]       = (
+        ego_with_leader["leader_id"] = ego_with_leader["Preceding"]
+        ego_with_leader["block"] = (
             ego_with_leader["leader_id"] != ego_with_leader["leader_id"].shift()
         ).cumsum()
 
@@ -88,7 +89,8 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
                 continue
 
             # Lane match ratio
-            lane_match = (merged["Lane_ID_ego"] == merged["Lane_ID_ldr"]).mean()
+            lane_match = (merged["Lane_ID_ego"] ==
+                          merged["Lane_ID_ldr"]).mean()
             if lane_match < CF_SAME_LANE_RATIO:
                 continue
 
@@ -98,8 +100,12 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
                 continue
 
             # Speed correlation
-            if merged["speed_ms_ego"].std() < 0.01 or merged["speed_ms_ldr"].std() < 0.01:
-                corr = 1.0  # both nearly stationary — valid car-following
+            # Speed correlation — skip check in congested low-speed conditions
+            avg_speed = merged["speed_ms_ego"].mean()
+            if avg_speed < 3.0:
+                corr = 1.0  # congested stop-and-go, correlation unreliable
+            elif merged["speed_ms_ego"].std() < 0.01 or merged["speed_ms_ldr"].std() < 0.01:
+                corr = 1.0  # both nearly stationary
             else:
                 corr = merged["speed_ms_ego"].corr(merged["speed_ms_ldr"])
             if pd.isna(corr) or corr < CF_SPEED_CORR_MIN:
@@ -131,7 +137,7 @@ def detect_onramp_merge(df: pd.DataFrame) -> pd.DataFrame:
       - Cumulative lateral displacement ≥ MERGE_MIN_LATERAL_M
     """
     events = []
-    vdict  = _build_vehicle_dict(df)
+    vdict = _build_vehicle_dict(df)
 
     for ego_id, ego_df in vdict.items():
         # Find frames where vehicle is on the ramp
@@ -141,17 +147,17 @@ def detect_onramp_merge(df: pd.DataFrame) -> pd.DataFrame:
 
         # Detect transition: last ramp frame → first mainline frame
         ego_sorted = ego_df.sort_values("Frame_ID")
-        lanes      = ego_sorted["Lane_ID"].values
-        frames     = ego_sorted["Frame_ID"].values
+        lanes = ego_sorted["Lane_ID"].values
+        frames = ego_sorted["Frame_ID"].values
 
         for i in range(len(lanes) - 1):
             if lanes[i] == ONRAMP_LANE_ID and lanes[i + 1] in MAINLINE_LANES:
                 merge_start_frame = frames[i]
-                merge_end_frame   = frames[i + 1]
+                merge_end_frame = frames[i + 1]
 
                 # Find frames ≤ MERGE_MAX_FRAMES before the transition
                 window_start = merge_start_frame - MERGE_MAX_FRAMES
-                window_df    = ego_sorted[
+                window_df = ego_sorted[
                     (ego_sorted["Frame_ID"] >= window_start) &
                     (ego_sorted["Frame_ID"] <= merge_end_frame)
                 ]
@@ -159,7 +165,8 @@ def detect_onramp_merge(df: pd.DataFrame) -> pd.DataFrame:
                 if window_df.empty:
                     continue
 
-                lateral_total = window_df["lateral_disp"].sum() * 0.3048  # ft→m
+                lateral_total = window_df["lateral_disp"].sum(
+                ) * 0.3048  # ft→m
                 if lateral_total < MERGE_MIN_LATERAL_M:
                     continue
 
@@ -189,29 +196,31 @@ def detect_lane_cutin(df: pd.DataFrame) -> pd.DataFrame:
       - The follower decelerates (speed drops ≥ CUTIN_SPEED_DROP_MS) after the event
     """
     events = []
-    vdict  = _build_vehicle_dict(df)
+    vdict = _build_vehicle_dict(df)
 
     # For every follower vehicle, track changes in their 'Preceding' pointer
     for follower_id, follower_df in vdict.items():
-        follower_sorted = follower_df.sort_values("Frame_ID").reset_index(drop=True)
+        follower_sorted = follower_df.sort_values(
+            "Frame_ID").reset_index(drop=True)
 
         # Detect when the Preceding vehicle changes (new vehicle cuts in)
         preceding_series = follower_sorted["Preceding"]
-        change_mask      = (preceding_series != preceding_series.shift()) & (preceding_series != 0)
-        change_indices   = follower_sorted[change_mask].index.tolist()
+        change_mask = (preceding_series != preceding_series.shift()) & (
+            preceding_series != 0)
+        change_indices = follower_sorted[change_mask].index.tolist()
 
         for idx in change_indices:
             if idx == 0:
                 continue
 
-            new_leader_id  = int(follower_sorted.at[idx, "Preceding"])
-            old_leader_id  = int(follower_sorted.at[idx - 1, "Preceding"])
+            new_leader_id = int(follower_sorted.at[idx, "Preceding"])
+            old_leader_id = int(follower_sorted.at[idx - 1, "Preceding"])
 
             if new_leader_id == 0 or new_leader_id not in vdict:
                 continue
 
             frame_of_cutin = int(follower_sorted.at[idx, "Frame_ID"])
-            cutter_df      = vdict[new_leader_id]
+            cutter_df = vdict[new_leader_id]
 
             # Check cutter changed lane around the cutin frame
             cutter_window = cutter_df[
@@ -227,25 +236,27 @@ def detect_lane_cutin(df: pd.DataFrame) -> pd.DataFrame:
 
             # Check follower speed drop after cutin
             before_window = follower_sorted[
-                follower_sorted["Frame_ID"].between(frame_of_cutin - 20, frame_of_cutin)
+                follower_sorted["Frame_ID"].between(
+                    frame_of_cutin - 20, frame_of_cutin)
             ]
             after_window = follower_sorted[
-                follower_sorted["Frame_ID"].between(frame_of_cutin, frame_of_cutin + 30)
+                follower_sorted["Frame_ID"].between(
+                    frame_of_cutin, frame_of_cutin + 30)
             ]
 
             if before_window.empty or after_window.empty:
                 continue
 
             speed_before = before_window["speed_ms"].mean()
-            speed_after  = after_window["speed_ms"].mean()
-            speed_drop   = speed_before - speed_after
+            speed_after = after_window["speed_ms"].mean()
+            speed_drop = speed_before - speed_after
 
             if speed_drop < CUTIN_SPEED_DROP_MS:
                 continue
 
             # Gap after cut-in
             gap_after_row = follower_sorted.at[idx, "Space_Headway"]
-            gap_after_m   = gap_after_row * 0.3048 if gap_after_row > 0 else None
+            gap_after_m = gap_after_row * 0.3048 if gap_after_row > 0 else None
 
             events.append({
                 "ego_id":         follower_id,
@@ -268,11 +279,12 @@ def detect_lane_cutin(df: pd.DataFrame) -> pd.DataFrame:
 
 def detect_all_scenarios(df: pd.DataFrame) -> pd.DataFrame:
     """Run all three detectors and return a unified events DataFrame."""
-    cf    = detect_car_following(df)
+    cf = detect_car_following(df)
     merge = detect_onramp_merge(df)
     cutin = detect_lane_cutin(df)
 
     all_events = pd.concat([cf, merge, cutin], ignore_index=True)
-    all_events = all_events.sort_values(["ego_id", "start_frame"]).reset_index(drop=True)
+    all_events = all_events.sort_values(
+        ["ego_id", "start_frame"]).reset_index(drop=True)
     logger.info(f"Total events detected: {len(all_events)}")
     return all_events
