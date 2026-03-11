@@ -14,6 +14,11 @@ Environment variables (for Cloud Run / GCP deployment):
     VISUALIZE         true | false  (default: true)
 """
 
+from modules.visualizer import visualize_all, plot_summary_dashboard
+from modules.output_writer import write_output
+from modules.windower import segment_windows
+from modules.scenario_detector import detect_all_scenarios
+from modules.preprocessor import preprocess
 import os
 import sys
 import argparse
@@ -26,19 +31,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-from modules.preprocessor     import preprocess
-from modules.scenario_detector import detect_all_scenarios
-from modules.windower          import segment_windows
-from modules.output_writer     import write_output
-from modules.visualizer        import visualize_all, plot_summary_dashboard
-
 
 def run_pipeline(
     input_path: str,
     output_dir: str = "output",
-    use_bigquery: bool = False,
-    project_id: str = None,
-    dataset_id: str = "ngsim_scenarios",
+    use_gcs: bool = False,
+    bucket_name: str = None,
+    gcs_prefix: str = "output",
     visualize: bool = True,
 ) -> dict:
     """
@@ -55,7 +54,8 @@ def run_pipeline(
     df = preprocess(input_path)
 
     if df.empty:
-        logger.error("Preprocessing returned empty DataFrame. Check your input file.")
+        logger.error(
+            "Preprocessing returned empty DataFrame. Check your input file.")
         sys.exit(1)
 
     # ── Step 2: Detect Scenarios ──────────────────────────────────────────────
@@ -65,10 +65,12 @@ def run_pipeline(
     events = detect_all_scenarios(df)
 
     if events.empty:
-        logger.warning("No scenarios detected. Check thresholds or input data.")
+        logger.warning(
+            "No scenarios detected. Check thresholds or input data.")
         return {"status": "no_events", "clean_rows": len(df)}
 
-    logger.info(f"\nEvent breakdown:\n{events['scenario_type'].value_counts().to_string()}")
+    logger.info(
+        f"\nEvent breakdown:\n{events['scenario_type'].value_counts().to_string()}")
 
     # ── Step 3: Window Segmentation ───────────────────────────────────────────
     logger.info("=" * 60)
@@ -82,8 +84,10 @@ def run_pipeline(
         logger.info("=" * 60)
         logger.info("STEP 4 – Visualization")
         logger.info("=" * 60)
-        plot_paths = visualize_all(df, samples, output_dir=os.path.join(output_dir, "plots"))
-        summary_plot = plot_summary_dashboard(samples, os.path.join(output_dir, "plots", "summary.png"))
+        plot_paths = visualize_all(
+            df, samples, output_dir=os.path.join(output_dir, "plots"))
+        summary_plot = plot_summary_dashboard(
+            samples, os.path.join(output_dir, "plots", "summary.png"))
         plot_paths.append(summary_plot)
         logger.info(f"Generated {len(plot_paths)} plot(s)")
 
@@ -93,9 +97,9 @@ def run_pipeline(
     logger.info("=" * 60)
     output_path = write_output(
         samples,
-        use_bigquery=use_bigquery,
-        project_id=project_id,
-        dataset_id=dataset_id,
+        use_gcs=use_gcs,
+        bucket_name=bucket_name,
+        gcs_prefix=gcs_prefix,
         output_dir=output_dir,
     )
 
@@ -123,14 +127,21 @@ def run_pipeline(
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description="NGSIM Scenario Extraction Pipeline")
-    parser.add_argument("--input",      required=True, help="Path to raw NGSIM CSV or gs:// URI")
-    parser.add_argument("--output",     default="output", help="Output directory")
-    parser.add_argument("--bigquery",   action="store_true", help="Write output to BigQuery")
-    parser.add_argument("--project",    default=None, help="GCP Project ID")
-    parser.add_argument("--dataset",    default="ngsim_scenarios", help="BigQuery dataset")
-    parser.add_argument("--visualize",  action="store_true", default=True, help="Generate plots")
-    parser.add_argument("--no-visualize", dest="visualize", action="store_false")
+    parser = argparse.ArgumentParser(
+        description="NGSIM Scenario Extraction Pipeline")
+    parser.add_argument("--input",      required=True,
+                        help="Path to raw NGSIM CSV or gs:// URI")
+    parser.add_argument("--output",     default="output",
+                        help="Output directory")
+    parser.add_argument("--gcs",        action="store_true",
+                        help="Write output to GCS as Parquet")
+    parser.add_argument("--bucket",     default=None, help="GCS bucket name")
+    parser.add_argument("--gcs-prefix", default="output",
+                        help="GCS path prefix")
+    parser.add_argument("--visualize",  action="store_true",
+                        default=True, help="Generate plots")
+    parser.add_argument("--no-visualize", dest="visualize",
+                        action="store_false")
     return parser.parse_args()
 
 
@@ -138,45 +149,40 @@ if __name__ == "__main__":
     # Support both CLI args and environment variables (for Cloud Run)
     if len(sys.argv) > 1:
         args = _parse_args()
-        input_path   = args.input
-        output_dir   = args.output
-        use_bigquery = args.bigquery
-        project_id   = args.project
-        dataset_id   = args.dataset
-        visualize    = args.visualize
+        input_path = args.input
+        output_dir = args.output
+        use_gcs = args.gcs
+        bucket_name = args.bucket
+        gcs_prefix = args.gcs_prefix
+        visualize = args.visualize
     else:
-        # Read from environment variables (Cloud Run deployment mode)
-        input_path   = os.environ.get("INPUT_GCS_PATH") or os.environ.get("INPUT_PATH", "")
-        output_dir   = os.environ.get("OUTPUT_DIR", "output")
-        use_bigquery = os.environ.get("USE_BIGQUERY", "false").lower() == "true"
-        project_id   = os.environ.get("GCP_PROJECT_ID")
-        dataset_id   = os.environ.get("BQ_DATASET_ID", "ngsim_scenarios")
-        visualize    = os.environ.get("VISUALIZE", "true").lower() == "true"
+        input_path = os.environ.get(
+            "INPUT_GCS_PATH") or os.environ.get("INPUT_PATH", "")
+        output_dir = os.environ.get("OUTPUT_DIR", "output")
+        use_gcs = os.environ.get("USE_GCS", "false").lower() == "true"
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        gcs_prefix = os.environ.get("GCS_PREFIX", "output")
+        visualize = os.environ.get("VISUALIZE", "true").lower() == "true"
 
         if not input_path:
-            logger.error("No input path provided. Set INPUT_GCS_PATH or INPUT_PATH env var, or use CLI args.")
+            logger.error(
+                "No input path provided. Set INPUT_GCS_PATH or INPUT_PATH env var, or use CLI args.")
             sys.exit(1)
 
     # GCS download if needed
     if input_path.startswith("gs://"):
         logger.info(f"Downloading from GCS: {input_path}")
-        from google.cloud import storage
         local_path = "/tmp/ngsim_raw.csv"
-        bucket_name = input_path.replace("gs://", "").split("/")[0]
-        blob_path   = "/".join(input_path.replace("gs://", "").split("/")[1:])
-        gcs_client  = storage.Client()
-        bucket      = gcs_client.bucket(bucket_name)
-        bucket.blob(blob_path).download_to_filename(local_path)
-        logger.info(f"Downloaded to {local_path}")
+        os.system(f"gsutil cp {input_path} {local_path}")
         input_path = local_path
 
     try:
         summary = run_pipeline(
             input_path=input_path,
             output_dir=output_dir,
-            use_bigquery=use_bigquery,
-            project_id=project_id,
-            dataset_id=dataset_id,
+            use_gcs=use_gcs,
+            bucket_name=bucket_name,
+            gcs_prefix=gcs_prefix,
             visualize=visualize,
         )
     except Exception as e:

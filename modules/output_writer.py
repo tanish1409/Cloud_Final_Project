@@ -1,9 +1,19 @@
 """
 Output Writer Module
 --------------------
-Saves labeled scenario windows to BigQuery (production) or local CSV (dev/testing).
+Saves labeled scenario windows as Parquet files.
 
-BigQuery schema is auto-created on first write.
+Storage strategy:
+  - Primary (GCP):  Cloud Storage (GCS) as Parquet files
+                    gs://ngsim-raw-data-ngsim-scenarios-proj/output/
+  - Fallback (local): output/ directory as Parquet + CSV
+
+Why Parquet on GCS over BigQuery:
+  - Trajectory data is file-oriented, not transactional
+  - Parquet handles nested JSON trajectory data natively
+  - Direct read/write via pandas — no schema management needed
+  - Readable by Dataflow/BigQuery external tables in Phase 2 if needed
+  - Significantly lower cost and complexity for this data volume
 """
 
 import os
@@ -14,35 +24,12 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-BIGQUERY_AVAILABLE = False
+GCS_AVAILABLE = False
 try:
-    from google.cloud import bigquery
-    BIGQUERY_AVAILABLE = True
+    from google.cloud import storage as gcs
+    GCS_AVAILABLE = True
 except ImportError:
-    logger.warning("google-cloud-bigquery not installed. BigQuery writes disabled.")
-
-
-BQ_SCHEMA = [
-    {"name": "scenario_type",        "type": "STRING"},
-    {"name": "ego_id",               "type": "INTEGER"},
-    {"name": "window_start_frame",   "type": "INTEGER"},
-    {"name": "window_end_frame",     "type": "INTEGER"},
-    {"name": "ego_trajectory",       "type": "JSON"},
-    {"name": "surrounding_vehicles", "type": "JSON"},
-    {"name": "num_surrounding",      "type": "INTEGER"},
-    {"name": "leader_id",            "type": "INTEGER"},
-    {"name": "avg_gap_m",            "type": "FLOAT"},
-    {"name": "speed_corr",           "type": "FLOAT"},
-    {"name": "duration_frames",      "type": "INTEGER"},
-    {"name": "from_lane",            "type": "INTEGER"},
-    {"name": "to_lane",              "type": "INTEGER"},
-    {"name": "lateral_disp_m",       "type": "FLOAT"},
-    {"name": "cutter_id",            "type": "INTEGER"},
-    {"name": "speed_drop_ms",        "type": "FLOAT"},
-    {"name": "gap_after_m",          "type": "FLOAT"},
-    {"name": "cutin_frame",          "type": "INTEGER"},
-    {"name": "ingested_at",          "type": "TIMESTAMP"},
-]
+    logger.warning("google-cloud-storage not installed. GCS writes disabled.")
 
 
 def _add_metadata(df: pd.DataFrame) -> pd.DataFrame:
@@ -51,80 +38,86 @@ def _add_metadata(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def write_to_bigquery(
-    samples: pd.DataFrame,
-    project_id: str,
-    dataset_id: str,
-    table_id: str = "scenario_windows",
-) -> bool:
-    """
-    Write samples to BigQuery. Creates table if it doesn't exist.
-    Returns True on success.
-    """
-    if not BIGQUERY_AVAILABLE:
-        logger.error("BigQuery client not available. Install google-cloud-bigquery.")
-        return False
+def _ensure_json_strings(df: pd.DataFrame) -> pd.DataFrame:
+    """Make sure JSON columns are strings for Parquet compatibility."""
+    for col in ["ego_trajectory", "surrounding_vehicles"]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda v: json.dumps(v) if not isinstance(v, str) else v
+            )
+    return df
 
-    client    = bigquery.Client(project=project_id)
-    table_ref = f"{project_id}.{dataset_id}.{table_id}"
+
+def write_to_gcs_parquet(
+    samples: pd.DataFrame,
+    bucket_name: str,
+    prefix: str = "output",
+) -> str:
+    """
+    Write samples to GCS as a Parquet file.
+    Returns the gs:// URI of the written file.
+    """
+    if not GCS_AVAILABLE:
+        logger.error("google-cloud-storage not available.")
+        return None
 
     samples = _add_metadata(samples)
+    samples = _ensure_json_strings(samples)
 
-    # Convert JSON cols to strings if not already
-    for col in ["ego_trajectory", "surrounding_vehicles"]:
-        if col in samples.columns and samples[col].dtype != object:
-            samples[col] = samples[col].apply(json.dumps)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"scenario_windows_{ts}.parquet"
+    blob_path = f"{prefix}/{filename}"
+    gcs_uri = f"gs://{bucket_name}/{blob_path}"
 
-    try:
-        job_config = bigquery.LoadJobConfig(
-            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            autodetect=True,
-        )
-        job = client.load_table_from_dataframe(samples, table_ref, job_config=job_config)
-        job.result()  # wait for job to finish
-        logger.info(f"Wrote {len(samples)} rows to {table_ref}")
-        return True
-    except Exception as e:
-        logger.error(f"BigQuery write failed: {e}")
-        return False
+    # Write parquet to a temp local file first, then upload
+    local_tmp = f"/tmp/{filename}"
+    samples.to_parquet(local_tmp, index=False, engine="pyarrow")
+
+    client = gcs.Client()
+    bucket = client.bucket(bucket_name)
+    bucket.blob(blob_path).upload_from_filename(local_tmp)
+    os.remove(local_tmp)
+
+    logger.info(f"Wrote {len(samples)} rows to {gcs_uri}")
+    return gcs_uri
 
 
-def write_to_csv(
+def write_to_local_parquet(
     samples: pd.DataFrame,
     output_dir: str = "output",
     filename: str = None,
 ) -> str:
-    """
-    Save samples to a local CSV file. Used as fallback when BQ is unavailable
-    or during local development / testing.
-    Returns path to the saved file.
-    """
+    """Write samples to local Parquet file. Returns path."""
     os.makedirs(output_dir, exist_ok=True)
     if filename is None:
-        ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"scenario_windows_{ts}.csv"
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"scenario_windows_{ts}.parquet"
 
     samples = _add_metadata(samples)
-    path    = os.path.join(output_dir, filename)
-    samples.to_csv(path, index=False)
+    samples = _ensure_json_strings(samples)
+    path = os.path.join(output_dir, filename)
+    samples.to_parquet(path, index=False, engine="pyarrow")
     logger.info(f"Wrote {len(samples)} rows to {path}")
     return path
 
 
 def write_output(
     samples: pd.DataFrame,
-    use_bigquery: bool = False,
-    project_id: str = None,
-    dataset_id: str = "ngsim_scenarios",
+    use_gcs: bool = False,
+    bucket_name: str = None,
+    gcs_prefix: str = "output",
     output_dir: str = "output",
 ) -> str:
     """
-    Smart output writer: use BigQuery if configured, else CSV.
+    Smart output writer:
+      - GCS Parquet if use_gcs=True and bucket_name provided
+      - Local Parquet otherwise
+    Returns path or gs:// URI.
     """
-    if use_bigquery and project_id:
-        success = write_to_bigquery(samples, project_id, dataset_id)
-        if success:
-            return f"bigquery://{project_id}.{dataset_id}.scenario_windows"
+    if use_gcs and bucket_name:
+        uri = write_to_gcs_parquet(samples, bucket_name, prefix=gcs_prefix)
+        if uri:
+            return uri
+        logger.warning("GCS write failed, falling back to local Parquet.")
 
-    # Fall back to CSV
-    return write_to_csv(samples, output_dir=output_dir)
+    return write_to_local_parquet(samples, output_dir=output_dir)
