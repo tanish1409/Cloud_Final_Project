@@ -1,5 +1,5 @@
 """
-Scenario Validator
+Scenario Validator -- Local Testing Purpose only
 ------------------
 Verifies that detected scenarios actually satisfy their detection criteria
 by re-checking each sample against the clean preprocessed data.
@@ -94,16 +94,17 @@ def validate_car_following(row, vdict):
     if avg_gap > CF_MAX_GAP_M:
         issues.append(f"Avg gap {avg_gap:.1f}m > {CF_MAX_GAP_M}m threshold")
 
-    # Check 3: Speed correlation
-    if merged["speed_ms_ego"].std() < 0.01:
-        corr = 1.0
-    else:
-        corr = merged["speed_ms_ego"].corr(merged["speed_ms_ldr"])
-    checks["speed_corr"] = round(corr, 3) if not pd.isna(corr) else None
-    avg_speed = merged["speed_ms_ego"].mean()
-    if avg_speed >= 3.0 and (pd.isna(corr) or corr < CF_SPEED_CORR_MIN):
-        issues.append(
-            f"Speed correlation {corr:.2f} < {CF_SPEED_CORR_MIN} threshold")
+    # Time headway check (more robust than speed corr in congestion)
+    # THW = gap / ego_speed; valid following = 0.5s to 5.0s
+    moving = merged[merged["speed_ms_ego"] > 1.0]
+    if not moving.empty:
+        thw = (moving["y_m_ldr"] - moving["y_m_ego"]).abs() / \
+            moving["speed_ms_ego"]
+        avg_thw = thw.mean()
+        checks["avg_thw_s"] = round(avg_thw, 2)
+        if avg_thw < 0.5 or avg_thw > 5.0:
+            issues.append(
+                f"Time headway {avg_thw:.2f}s outside valid range 0.5–5.0s")
 
     # Check 4: Leader is actually ahead of ego
     ahead = (merged["y_m_ldr"] > merged["y_m_ego"]).mean()

@@ -173,7 +173,23 @@ if __name__ == "__main__":
     if input_path.startswith("gs://"):
         logger.info(f"Downloading from GCS: {input_path}")
         local_path = "/tmp/ngsim_raw.csv"
-        os.system(f"gsutil cp {input_path} {local_path}")
+        try:
+            from google.cloud import storage as gcs
+            # parse bucket and blob from gs://bucket/path/to/file.csv
+            # strip gs://
+            path_no_scheme = input_path[5:]
+            bucket_part = path_no_scheme.split("/")[0]
+            blob_part = "/".join(path_no_scheme.split("/")[1:])
+            gcs_client = gcs.Client()
+            bucket_obj = gcs_client.bucket(bucket_part)
+            blob_obj = bucket_obj.blob(blob_part)
+            blob_obj.download_to_filename(local_path)
+            logger.info(
+                f"Downloaded to {local_path} ({os.path.getsize(local_path):,} bytes)")
+        except Exception as e:
+            logger.error(f"GCS download failed: {e}")
+            traceback.print_exc()
+            sys.exit(1)
         input_path = local_path
 
     try:
@@ -185,6 +201,27 @@ if __name__ == "__main__":
             gcs_prefix=gcs_prefix,
             visualize=visualize,
         )
+
+        # Upload plots to GCS if running in cloud mode
+        if use_gcs and bucket_name and summary.get("plots"):
+            logger.info("Uploading plots to GCS...")
+            try:
+                from google.cloud import storage as gcs
+                gcs_client = gcs.Client()
+                bucket_obj = gcs_client.bucket(bucket_name)
+                uploaded = 0
+                for local_plot in summary["plots"]:
+                    if os.path.exists(local_plot):
+                        fname = os.path.basename(local_plot)
+                        gcs_path = f"{gcs_prefix}/plots/{fname}"
+                        blob_obj = bucket_obj.blob(gcs_path)
+                        blob_obj.upload_from_filename(local_plot)
+                        uploaded += 1
+                logger.info(
+                    f"Uploaded {uploaded} plot(s) to gs://{bucket_name}/{gcs_prefix}/plots/")
+            except Exception as e:
+                logger.warning(f"Plot upload failed (non-fatal): {e}")
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         traceback.print_exc()

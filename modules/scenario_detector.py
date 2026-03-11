@@ -24,7 +24,7 @@ WINDOW_FRAMES = 5 * FRAME_RATE_HZ   # 5-second window = 50 frames
 # Car-following
 CF_MAX_GAP_M = 80.0    # max longitudinal gap between leader & follower (m)
 CF_MIN_DURATION_FRAMES = 30      # must follow for ≥ 3 s
-CF_SPEED_CORR_MIN = 0.0     # minimum Pearson correlation of speeds
+# CF_SPEED_CORR_MIN = 0.0     # minimum Pearson correlation of speeds
 CF_SAME_LANE_RATIO = 0.8     # fraction of window where lanes match
 
 # On-ramp merge
@@ -99,17 +99,15 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
             if gap.mean() > CF_MAX_GAP_M:
                 continue
 
-            # Speed correlation
-            # Speed correlation — skip check in congested low-speed conditions
-            avg_speed = merged["speed_ms_ego"].mean()
-            if avg_speed < 3.0:
-                corr = 1.0  # congested stop-and-go, correlation unreliable
-            elif merged["speed_ms_ego"].std() < 0.01 or merged["speed_ms_ldr"].std() < 0.01:
-                corr = 1.0  # both nearly stationary
-            else:
-                corr = merged["speed_ms_ego"].corr(merged["speed_ms_ldr"])
-            if pd.isna(corr) or corr < CF_SPEED_CORR_MIN:
-                continue
+            # Time headway check (robust in congestion)
+            # THW = gap / ego_speed; valid car-following = 0.5s to 4.0s
+            moving = merged[merged["speed_ms_ego"] > 1.0]
+            if not moving.empty:
+                thw = (moving["y_m_ldr"] - moving["y_m_ego"]
+                       ).abs() / moving["speed_ms_ego"]
+                avg_thw = thw.mean()
+                if avg_thw < 0.5 or avg_thw > 4.0:
+                    continue
 
             events.append({
                 "ego_id":       ego_id,
@@ -118,7 +116,7 @@ def detect_car_following(df: pd.DataFrame) -> pd.DataFrame:
                 "end_frame":    int(block["Frame_ID"].iloc[-1]),
                 "scenario_type": "car_following",
                 "avg_gap_m":    round(gap.mean(), 2),
-                "speed_corr":   round(corr, 3),
+                "avg_thw_s":       round(avg_thw if not moving.empty else 0, 2),
                 "duration_frames": len(block),
             })
 
