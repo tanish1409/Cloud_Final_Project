@@ -21,12 +21,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ── I-80 constants ────────────────────────────────────────────────────────────
-I80_VALID_LANES   = {1, 2, 3, 4, 5, 6}   # exclude HOV (lane 7) and ramp misc
-ONRAMP_LANE_ID    = 6                      # rightmost ramp lane in I-80 dataset
-MAINLINE_LANES    = {1, 2, 3, 4, 5}
-FEET_TO_METRES    = 0.3048
-FPS_TO_MPS        = 0.3048
-FRAME_RATE_HZ     = 10                    # NGSIM records at 10 Hz
+I80_VALID_LANES = {1, 2, 3, 4, 5, 6}   # exclude HOV (lane 7) and ramp misc
+ONRAMP_LANE_ID = 6                      # rightmost ramp lane in I-80 dataset
+MAINLINE_LANES = {1, 2, 3, 4, 5}
+FEET_TO_METRES = 0.3048
+FPS_TO_MPS = 0.3048
+FRAME_RATE_HZ = 10                    # NGSIM records at 10 Hz
 SEGMENT_LENGTH_FT = 1650                  # ~500 m in feet
 
 # Required columns and their expected dtypes after cleaning
@@ -52,7 +52,8 @@ REQUIRED_COLS = {
 }
 
 # Columns that can be coerced; if still NaN after coercion they are dropped
-NULLABLE_AFTER_COERCE = {"Space_Headway", "Time_Headway", "Preceding", "Following"}
+NULLABLE_AFTER_COERCE = {"Space_Headway",
+                         "Time_Headway", "Preceding", "Following"}
 
 
 def load_raw(filepath: str) -> pd.DataFrame:
@@ -85,12 +86,13 @@ def _drop_missing(df: pd.DataFrame) -> pd.DataFrame:
     mandatory = [c for c in REQUIRED_COLS if c not in NULLABLE_AFTER_COERCE]
     before = len(df)
     df = df.dropna(subset=mandatory)
-    logger.info(f"Dropped {before - len(df)} rows with missing mandatory fields")
+    logger.info(
+        f"Dropped {before - len(df)} rows with missing mandatory fields")
     # Fill nullable cols with sensible defaults
-    df["Preceding"]     = df["Preceding"].fillna(0).astype("int64")
-    df["Following"]     = df["Following"].fillna(0).astype("int64")
+    df["Preceding"] = df["Preceding"].fillna(0).astype("int64")
+    df["Following"] = df["Following"].fillna(0).astype("int64")
     df["Space_Headway"] = df["Space_Headway"].fillna(-1.0)
-    df["Time_Headway"]  = df["Time_Headway"].fillna(-1.0)
+    df["Time_Headway"] = df["Time_Headway"].fillna(-1.0)
     return df
 
 
@@ -142,14 +144,14 @@ def _fix_monotonicity(df: pd.DataFrame) -> pd.DataFrame:
 
 def _convert_units(df: pd.DataFrame) -> pd.DataFrame:
     """Convert feet/fps to metres/m/s and add derived columns."""
-    df["x_m"]        = df["Local_X"] * FEET_TO_METRES
-    df["y_m"]        = df["Local_Y"] * FEET_TO_METRES
-    df["speed_ms"]   = df["v_Vel"]   * FPS_TO_MPS
-    df["accel_ms2"]  = df["v_Acc"]   * FPS_TO_MPS
-    df["length_m"]   = df["v_Length"]* FEET_TO_METRES
-    df["width_m"]    = df["v_Width"] * FEET_TO_METRES
+    df["x_m"] = df["Local_X"] * FEET_TO_METRES
+    df["y_m"] = df["Local_Y"] * FEET_TO_METRES
+    df["speed_ms"] = df["v_Vel"] * FPS_TO_MPS
+    df["accel_ms2"] = df["v_Acc"] * FPS_TO_MPS
+    df["length_m"] = df["v_Length"] * FEET_TO_METRES
+    df["width_m"] = df["v_Width"] * FEET_TO_METRES
     # timestamp in seconds (Global_Time is in milliseconds)
-    df["time_s"]     = df["Global_Time"] / 1000.0
+    df["time_s"] = df["Global_Time"] / 1000.0
     return df
 
 
@@ -158,17 +160,18 @@ def _add_derived_fields(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["Vehicle_ID", "Frame_ID"])
     grp = df.groupby("Vehicle_ID")
 
-    df["prev_lane"]    = grp["Lane_ID"].shift(1)
-    df["prev_speed"]   = grp["speed_ms"].shift(1)
-    df["prev_x"]       = grp["x_m"].shift(1)
-    df["prev_y"]       = grp["y_m"].shift(1)
-    df["lateral_disp"] = (df["x_m"] - df["prev_x"]).abs()  # lateral movement per frame
+    df["prev_lane"] = grp["Lane_ID"].shift(1)
+    df["prev_speed"] = grp["speed_ms"].shift(1)
+    df["prev_x"] = grp["x_m"].shift(1)
+    df["prev_y"] = grp["y_m"].shift(1)
+    # lateral movement per frame
+    df["lateral_disp"] = (df["x_m"] - df["prev_x"]).abs()
 
     # Forward fill NaN from shift for first frame of each vehicle
-    df["prev_lane"]  = df["prev_lane"].fillna(df["Lane_ID"])
+    df["prev_lane"] = df["prev_lane"].fillna(df["Lane_ID"])
     df["prev_speed"] = df["prev_speed"].fillna(df["speed_ms"])
-    df["prev_x"]     = df["prev_x"].fillna(df["x_m"])
-    df["prev_y"]     = df["prev_y"].fillna(df["y_m"])
+    df["prev_x"] = df["prev_x"].fillna(df["x_m"])
+    df["prev_y"] = df["prev_y"].fillna(df["y_m"])
 
     return df
 
@@ -203,5 +206,6 @@ def preprocess(filepath: str) -> pd.DataFrame:
     df = df.reset_index(drop=True)
     logger.info(f"Clean data shape: {df.shape}")
     logger.info(f"Unique vehicles: {df['Vehicle_ID'].nunique()}")
-    logger.info(f"Frame range: {df['Frame_ID'].min()} – {df['Frame_ID'].max()}")
+    logger.info(
+        f"Frame range: {df['Frame_ID'].min()} – {df['Frame_ID'].max()}")
     return df
