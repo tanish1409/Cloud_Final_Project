@@ -1,19 +1,3 @@
-"""
-main.py  –  NGSIM Scenario Extraction Pipeline (Phase 1 Monolithic)
--------------------------------------------------------------------
-Entry point for the Cloud Run service.
-Can also be run locally:
-
-    python main.py --input data/i80_trajectories.csv --output output/ --visualize
-
-Environment variables (for Cloud Run / GCP deployment):
-    INPUT_GCS_PATH    gs://your-bucket/ngsim/i80_trajectories.csv
-    USE_BIGQUERY      true | false  (default: false → local CSV)
-    GCP_PROJECT_ID    your-project-id
-    BQ_DATASET_ID     ngsim_scenarios
-    VISUALIZE         true | false  (default: true)
-"""
-
 from modules.visualizer import visualize_all, plot_summary_dashboard
 from modules.output_writer import write_output
 from modules.windower import segment_windows

@@ -1,19 +1,3 @@
-"""
-Preprocessor Module
--------------------
-Cleans and prepares raw NGSIM I-80 CSV data for scenario detection.
-
-Raw NGSIM issues handled:
-  - Non-numeric / corrupted values in numeric columns
-  - Duplicate rows (same Vehicle_ID + Frame_ID)
-  - Missing / NaN values
-  - Inconsistent lane IDs (HOV lane exclusion)
-  - Out-of-range spatial coordinates
-  - Non-monotonic time frames per vehicle
-  - Unit standardisation (feet → metres, fps → m/s)
-  - Derived fields: relative speed, gap distance, lateral offset
-"""
-
 import pandas as pd
 import numpy as np
 import logging

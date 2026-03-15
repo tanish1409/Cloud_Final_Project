@@ -1,15 +1,3 @@
-"""
-Window Segmenter Module
------------------------
-Slices each detected scenario event into a 5-second (50-frame) window
-and enriches it with ego vehicle + surrounding vehicle data.
-
-Output schema (one row per window):
-  scenario_type, ego_id, window_start_frame, window_end_frame,
-  ego_trajectory (list of dicts), surrounding_vehicles (list of dicts),
-  [scenario-specific metadata fields]
-"""
-
 import pandas as pd
 import numpy as np
 import json

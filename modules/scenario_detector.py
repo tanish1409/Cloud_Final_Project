@@ -1,16 +1,3 @@
-"""
-Scenario Detector Module
-------------------------
-Applies rule-based logic to detect three driving scenarios from NGSIM I-80:
-
-  1. Car-Following       – vehicle A follows vehicle B in the same lane
-  2. On-Ramp Merge       – vehicle transitions from ramp lane → mainline
-  3. Lane Cut-In         – vehicle abruptly enters the lane ahead of another
-
-Each detector returns a DataFrame of detected events with columns:
-  ego_id, start_frame, end_frame, scenario_type, [scenario-specific metadata]
-"""
-
 import pandas as pd
 import numpy as np
 import logging

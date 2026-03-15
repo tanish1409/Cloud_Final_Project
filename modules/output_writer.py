@@ -1,21 +1,3 @@
-"""
-Output Writer Module
---------------------
-Saves labeled scenario windows as Parquet files.
-
-Storage strategy:
-  - Primary (GCP):  Cloud Storage (GCS) as Parquet files
-                    gs://ngsim-raw-data-ngsim-scenarios-proj/output/
-  - Fallback (local): output/ directory as Parquet + CSV
-
-Why Parquet on GCS over BigQuery:
-  - Trajectory data is file-oriented, not transactional
-  - Parquet handles nested JSON trajectory data natively
-  - Direct read/write via pandas — no schema management needed
-  - Readable by Dataflow/BigQuery external tables in Phase 2 if needed
-  - Significantly lower cost and complexity for this data volume
-"""
-
 import os
 import json
 import logging
