@@ -1,0 +1,96 @@
+Phase 2 — Microservices Build & Deploy Commands
+=================================================
+
+REGISTRY PREFIX: us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo
+
+── Step 1: Build all container images ──────────────────────────────────────
+
+cd services\preprocessor
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/preprocessor:v1 .
+
+cd ..\detector-cf
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/detector-cf:v1 .
+
+cd ..\detector-merge
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/detector-merge:v1 .
+
+cd ..\detector-cutin
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/detector-cutin:v1 .
+
+cd ..\windower
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/windower:v1 .
+
+cd ..\visualizer
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/visualizer:v1 .
+
+cd ..\output-writer
+gcloud builds submit --tag us-central1-docker.pkg.dev/ngsim-scenarios-proj/ngsim-repo/output-writer:v1 .
+
+
+── Step 2: Create Cloud Run services (via Console UI) ─────────────────────
+
+For each service, go to Cloud Run > Create Service:
+  - Select image from Artifact Registry
+  - Region: us-central1
+  - Authentication: Require authentication
+  - Min instances: 0, Max instances: 1
+  - Env vars: GCS_BUCKET=ngsim-raw-data-ngsim-scenarios-proj, GCP_PROJECT=ngsim-scenarios-proj
+
+Memory settings:
+  preprocessor:     2 GiB, timeout 300s
+  detector-cf:      2 GiB, timeout 300s
+  detector-merge:   512 MiB, timeout 300s
+  detector-cutin:   1 GiB, timeout 300s
+  windower:         2 GiB, timeout 300s
+  visualizer:       1 GiB, timeout 300s
+  output-writer:    512 MiB, timeout 300s
+
+
+── Step 3: Create Pub/Sub topics (via Console UI) ─────────────────────────
+
+Create 3 topics:
+  clean-data-ready
+  events-ready
+  windows-ready
+
+
+── Step 4: Create Pub/Sub push subscriptions (via Console UI) ─────────────
+
+Topic: clean-data-ready
+  Subscription: clean-data-sub-cf        -> Push to https://detector-cf-XXXXX-uc.a.run.app/
+  Subscription: clean-data-sub-merge     -> Push to https://detector-merge-XXXXX-uc.a.run.app/
+  Subscription: clean-data-sub-cutin     -> Push to https://detector-cutin-XXXXX-uc.a.run.app/
+
+Topic: events-ready
+  Subscription: events-ready-sub         -> Push to https://windower-XXXXX-uc.a.run.app/
+
+Topic: windows-ready
+  Subscription: windows-ready-sub-viz    -> Push to https://visualizer-XXXXX-uc.a.run.app/
+  Subscription: windows-ready-sub-out    -> Push to https://output-writer-XXXXX-uc.a.run.app/
+
+For all push subscriptions:
+  - Ack deadline: 300 seconds
+  - Enable authentication with a service account that has Cloud Run Invoker role
+
+
+── Step 5: Test the pipeline ──────────────────────────────────────────────
+
+Trigger the preprocessor manually:
+  curl -X POST https://preprocessor-XXXXX-uc.a.run.app/ -H "Authorization: Bearer $(gcloud auth print-identity-token)" -H "Content-Type: application/json" -d "{\"run_id\": \"test_001\"}"
+
+Check outputs in GCS:
+  gsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/test_001/
+  gsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/test_001/events/
+  gsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/test_001/plots/
+  gsutil ls gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/test_001/final/
+
+Download final output for local validation:
+  gsutil cp gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/test_001/final/*.parquet output/
+  python validate.py --data trajectories-0400-0415.csv --samples output/scenario_windows_*.parquet --output output
+
+
+── Step 6: Check logs if something fails ──────────────────────────────────
+
+  gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=preprocessor" --limit=20
+  gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=detector-cf" --limit=20
+  gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=windower" --limit=20
