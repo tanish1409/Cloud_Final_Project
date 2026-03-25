@@ -37,13 +37,13 @@ For each service, go to Cloud Run > Create Service:
   - Env vars: GCS_BUCKET=ngsim-raw-data-ngsim-scenarios-proj, GCP_PROJECT=ngsim-scenarios-proj
 
 Memory settings:
-  preprocessor:     2 GiB, timeout 300s
-  detector-cf:      2 GiB, timeout 300s
-  detector-merge:   512 MiB, timeout 300s
-  detector-cutin:   1 GiB, timeout 300s
-  windower:         2 GiB, timeout 300s
-  visualizer:       1 GiB, timeout 300s
-  output-writer:    512 MiB, timeout 300s
+  preprocessor:     2 GiB, timeout 300s  https://preprocessor-1013387017964.us-central1.run.app
+  detector-cf:      2 GiB, timeout 300s  https://detector-cf-1013387017964.us-central1.run.app
+  detector-merge:   512 MiB, timeout 300s  https://detector-merge-1013387017964.us-central1.run.app
+  detector-cutin:   1 GiB, timeout 300s  https://detector-cutin-1013387017964.us-central1.run.app
+  windower:         2 GiB, timeout 300s  https://windower-1013387017964.us-central1.run.app
+  visualizer:       1 GiB, timeout 300s  https://visualizer-1013387017964.us-central1.run.app
+  output-writer:    512 MiB, timeout 300s  https://output-writer-1013387017964.us-central1.run.app
 
 
 ── Step 3: Create Pub/Sub topics (via Console UI) ─────────────────────────
