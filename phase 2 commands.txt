@@ -1,0 +1,27 @@
+Run: 
+
+python pipeline.py \
+  --runner DataflowRunner \
+  --project ngsim-scenarios-proj \
+  --region us-central1 \
+  --temp_location gs://ngsim-raw-data-ngsim-scenarios-proj/dataflow/tmp \
+  --staging_location gs://ngsim-raw-data-ngsim-scenarios-proj/dataflow/staging \
+  --input_csv gs://ngsim-raw-data-ngsim-scenarios-proj/i80/trajectories-0400-0415.csv \
+  --output_bucket ngsim-raw-data-ngsim-scenarios-proj \
+  --machine_type n1-standard-2 \
+  --max_num_workers 1 \
+  --disk_size_gb 30 \
+  --setup_file ./setup.py
+
+
+Download data:
+
+gsutil cp gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/run_20260329_144416/final/scenario_windows_20260329_145150.parquet output/
+
+gsutil cp gs://ngsim-raw-data-ngsim-scenarios-proj/pipeline/run_20260329_144416/plots/*.png output\plots\
+
+Validate:
+
+python verify_frames.py output/scenario_windows_20260329_145150.parquet
+
+python validate.py --data trajectories-0400-0415.csv --samples output/scenario_windows_20260329_145150.parquet --output output
